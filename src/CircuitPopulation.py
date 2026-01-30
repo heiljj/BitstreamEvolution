@@ -28,6 +28,7 @@ from Circuit.FullySimCircuit import FullySimCircuit
 from Circuit.IntrinsicCircuit import IntrinsicCircuit
 from Circuit.PulseCountFitnessFunction import PulseCountFitnessFunction
 from Circuit.SimHardwareCircuit import SimHardwareCircuit
+from Circuit.CGPIntrinsicCircuit import CGPIntrinsicCircuit
 from Circuit.ToneDiscriminatorFitnessFunction import ToneDiscriminatorFitnessFunction
 from Circuit.VarMaxFitnessFunction import VarMaxFitnessFunction
 from Config import Config
@@ -280,6 +281,9 @@ class CircuitPopulation:
             elif self.__config.get_fitness_func() == 'TONE_DISCRIMINATOR':
                 fit_func = ToneDiscriminatorFitnessFunction()
 
+            if self.__config.get_simulation_mode() == "FULLY_INTRINSIC_CGP":
+                return CGPIntrinsicCircuit(index, file_name, self.__config, seed_arg, self.__rand, self.__logger, self.__microcontroller, fit_func)
+            
             return IntrinsicCircuit(index, file_name, self.__config, seed_arg, self.__rand, self.__logger, self.__microcontroller, fit_func)
 
     def populate(self):
