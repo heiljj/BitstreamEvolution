@@ -280,11 +280,7 @@ class FileBasedCircuit(Circuit):
         return self._hardware_file
 
     def get_bitstream(self):
-        bitstream = []
-        def add_bit(bit, *rest):
-            bitstream.append(bit)
-        self._run_at_each_modifiable(add_bit)
-        return bitstream
+        return 1
 
     def get_hardware_file_path(self):
         return self._hardware_filepath
@@ -368,7 +364,7 @@ class FileBasedCircuit(Circuit):
             # Create the comment
             comment_line = ".comment FILE_ATTRIBUTES " + attribute + "={" + value + "}\n"
             # This requires re-mapping the self._hardware_file
-            #hardware_file = open(file_path, "r+")
+            # hardware_file = open(file_path, "r+")
             content = hardware_file.read()
             hardware_file.seek(0, 0)
             hardware_file.write(comment_line + content)

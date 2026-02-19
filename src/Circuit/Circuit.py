@@ -153,6 +153,7 @@ class Circuit(ABC):
         #         value = [str(self._pulses)]
         #     else:
         #         value = [str(self._fitness)]
+        print("alllive")
 
         lines[index] = "{},{},{}\n".format(
             self._index, 

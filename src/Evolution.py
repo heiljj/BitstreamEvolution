@@ -52,7 +52,6 @@ class Evolution:
             c = run(["./arduino-cli", "compile", "-b", "arduino:avr:nano", "data/ReadSignal/ReadSignal.ino"])
             usb_port = config.get_usb_path()
             u = run(["./arduino-cli", "upload", "-b", "arduino:avr:nano", "-p", usb_port, "data/ReadSignal/ReadSignal.ino"])
-
         ## Run Evolution
         logger = Logger(config, experiment_description)
         # logger.log_info(1, args) - Not sure how to log arguments. This was my attempt to do so.
@@ -66,7 +65,6 @@ class Evolution:
         self.config = config
         self.logger = logger
         self.population = population
-
         if config.get_simulation_mode() != "INTRINSIC_SENSITIVITY":
             population.populate()
             population.evolve()

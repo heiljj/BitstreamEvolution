@@ -459,7 +459,7 @@ def run():
 
     plots_dir = config.get_plots_directory()
 
-    formal = False
+    formal = True
     if len(sys.argv) > 1 and sys.argv[1] == 'formal':
         formal = True 
         plots_dir = plots_dir.joinpath("Formal")

@@ -272,6 +272,8 @@ class CircuitPopulation:
             return FullySimCircuit(index, file_name, self.__config, sine_funcs, self.__rand)
         elif self.__config.get_simulation_mode() == 'SIM_HARDWARE':
             return SimHardwareCircuit(index, file_name, self.__config, seed_arg, self.__logger, self.__rand)
+        elif self.__config.get_simulation_mode() == "FULLY_INTRINSIC_CGP":
+                return CGPIntrinsicCircuit(index, file_name, self.__config, seed_arg, self.__rand, self.__logger, self.__microcontroller, PulseCountFitnessFunction())
         else:
             fit_func = None
             if self.__config.get_fitness_func() == 'VARIANCE':
@@ -279,11 +281,7 @@ class CircuitPopulation:
             elif self.__config.get_fitness_func() in ['PULSE_COUNT', 'SENSITIVE_PULSE_COUNT', 'TOLERANT_PULSE_COUNT']:
                 fit_func = PulseCountFitnessFunction()
             elif self.__config.get_fitness_func() == 'TONE_DISCRIMINATOR':
-                fit_func = ToneDiscriminatorFitnessFunction()
-
-            if self.__config.get_simulation_mode() == "FULLY_INTRINSIC_CGP":
-                return CGPIntrinsicCircuit(index, file_name, self.__config, seed_arg, self.__rand, self.__logger, self.__microcontroller, fit_func)
-            
+                fit_func = ToneDiscriminatorFitnessFunction()            
             return IntrinsicCircuit(index, file_name, self.__config, seed_arg, self.__rand, self.__logger, self.__microcontroller, fit_func)
 
     def populate(self):
@@ -352,6 +350,7 @@ class CircuitPopulation:
                 subdirectory_index = (subdirectory_index + 1) % len(all_subdir_circuits)
             else:
                 seedArg = template
+            
 
             ckt = self.__construct_circuit(index, file_name, seedArg, sine_funcs)
             if self.__config.get_init_mode() == "RANDOM":
@@ -359,6 +358,7 @@ class CircuitPopulation:
             elif self.__config.get_init_mode() == "CLONE_SEED_MUTATE":
                 # Call mutate once on this circuit
                 ckt.mutate()
+                print("populate")
             elif self.__config.get_init_mode() == "EXISTING_POPULATION":
                 # Make sure the circuit puts a line at the top of its .asc file denoting the source population
                 ckt.set_file_attribute('src_population', str(subdirectory_index))
@@ -618,7 +618,6 @@ class CircuitPopulation:
                     circuit.set_file_attribute("fitness", str(fitness))
                     if self.__config.is_pulse_count():
                         circuit.set_file_attribute("pulse_count", str(circuit.get_extra_data('pulses')))
-
                 # Commented out for now while we test
                 # Pretty sure this was originally for pulse count only, leaving it commented out since things are working right now
                 '''if fitness > self.__config.get_randomize_threshold():
@@ -629,6 +628,7 @@ class CircuitPopulation:
                 #add the circuit's bistream to our population sum - for diversity calculation and visualization
                 if self.__config.get_simulation_mode() != 'FULLY_SIM':
                     self.__population_bistream_sum += circuit.get_bitstream()
+                print("sat")
 
             epoch_time = time() - start
             self.__circuits = reevaulated_circuits
@@ -745,7 +745,7 @@ class CircuitPopulation:
                     fits.append(str(ckt.get_fitness()))
                 live_file.write(("{}:{}\n").format(self.__current_epoch, ",".join(fits)))
 
-            if self.__config.get_simulation_mode() == "FULLY_INTRINSIC":
+            if self.__config.get_simulation_mode() == "FULLY_INTRINSIC" or self.__config.get_simulation_mode() == "FULLY_INTRINSIC_CGP":
                 if not self.__config.is_pulse_func():
                     with open("workspace/heatmaplivedata.log", "a") as live_file2:
                         best = self.__circuits[0]
@@ -869,6 +869,7 @@ class CircuitPopulation:
         Selection algorithm that compares every circuit in the population to a random elite (chosen proportionally based on each elite's fitness).
         If circuit has a lower fitness, crossover or mutate the circuit
         """
+        print("In selection")
         self.__log_event(2, "Number of Elites:", self.__n_elites)
         self.__log_event(2, "Ranked Fitness:", self.__circuits)
 
@@ -1211,6 +1212,8 @@ class CircuitPopulation:
         float
             Returns Hamming distance in the population.
         """
+        return 0
+    
         running_total = 0
         n = len(self.__circuits)
         num_pairs = n * (n-1) / 2

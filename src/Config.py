@@ -259,7 +259,7 @@ class Config:
            The config's selected simulation mode from the list of possible modes.
 		"""
 		input = self.get_top_parameters("SIMULATION_MODE")
-		valid_vals = ["FULLY_INTRINSIC", "FULLY_SIM", "SIM_HARDWARE", "INTRINSIC_SENSITIVITY"]
+		valid_vals = ["FULLY_INTRINSIC", "FULLY_SIM", "SIM_HARDWARE", "INTRINSIC_SENSITIVITY", "FULLY_INTRINSIC_CGP"]
 		self.check_valid_value("simulation mode", input, valid_vals)
 		return input
 
