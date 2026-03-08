@@ -16,7 +16,7 @@ import numpy as np
 from dataclasses import dataclass, field
 import random
 # from config_improved import TileDirection, generate_tile
-from Circuit.DirectRouting.config_improved import TileDirection, generate_tile
+from config_improved import TileDirection, generate_tile
 import re
 
 @dataclass
@@ -30,7 +30,7 @@ class Config:
     board_width: int = 10
     logic_tiles: list[tuple[int, int]] = field(default_factory=lambda: [(c, r) for r in range(28,31) for c in range(9,19) if r not in {0, 31} and c not in {0, 6, 19, 25} and not (r == 30 and c == 12)]) # This generates the coords of all the logic tiles (I know it's awful)
     ram_columns: list = field(default_factory=lambda: [6, 19])
-    
+
 # Mapping from 3-bit integer to TileDirection
 DIRECTION_MAP = [
     TileDirection.BOT,
@@ -80,30 +80,30 @@ def generate_tile_from_gene(x, y, gene, output=False, past_ram=False):
     input0, input1, input2, input3, lut_init = decode_genotype(gene)
     return generate_tile(x, y, input0, input1, input2, input3, lut_init, output, past_ram)
 
-def generate_asc_config(genotype):
+def generate_asc_config(genotype, config, seed):
     asc = ""
-    
-    with open("src/Circuit/DirectRouting/seed_hardware.asc", "r") as f:
+
+    with open(seed, "r") as f:
         asc = f.read()
-    
+
     def replace_tile(bitstream: str, x: int, y: int, new_content: str) -> str:
         pattern = re.compile(
             rf'\.logic_tile\s+{x}\s+{y}\n'  # match the header line
             r'(?:[01]+\n)*',                  # match the binary data lines
             re.MULTILINE
         )
-        
+
         result, count = pattern.subn(new_content, bitstream)
         if count == 0:
             raise ValueError(f"logic_tile {x} {y} not found")
         return result
-    
+
     def insert_tile(x, y, tile):
         nonlocal asc
         tmp = replace_tile(asc, x, y, tile)
         asc = tmp if not tmp.isspace() else asc
 
-    config = Config()
+    # config = Config()
     for i in range(len(genotype)):
         x, y = config.logic_tiles[len(config.logic_tiles)-i-1]
         gene = genotype[i]
@@ -219,5 +219,5 @@ if __name__ == "__main__":
     config = Config()
     population = make_population(config.population_size, config.num_nodes)
     # print("Initial Population:")
-    # print(generate_asc_config(population[0]))
-    print(population[0])
+    with open("ckt", "w") as f:
+        f.write(generate_asc_config(population[0]))
