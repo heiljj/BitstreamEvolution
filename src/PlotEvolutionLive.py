@@ -13,13 +13,15 @@ from matplotlib import colormaps
 import configparser
 import re
 from Config import Config
-import math 
+import math
 import numpy as np
 import sys
 from utilities import determine_color
 from os.path import exists
 from os import mkdir
 import argparse
+import json
+import signal
 
 """
 Static parameters can be found and changed in the config.ini file in the root project folder
@@ -33,8 +35,15 @@ config = Config("workspace/builtconfig.ini")
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument("-f", "--frame-interval", required=False, default=10000)
+arg_parser.add_argument("-l", "--log-scale-pulses", required=False, action="store_true", default=None,
+                        help="Use log scale for pulse count y-axes. Overrides config file setting.")
+arg_parser.add_argument("-L", "--log-scale-fitness", required=False, action="store_true", default=None,
+                        help="Use log scale for fitness y-axis with a reference line at 1.0. Overrides config file setting.")
 args = arg_parser.parse_args()
 FRAME_INTERVAL = int(args.frame_interval)
+# CLI flags override config; if not provided, fall back to config
+LOG_SCALE_PULSES = args.log_scale_pulses if args.log_scale_pulses is not None else config.get_log_scale_pulses()
+LOG_SCALE_FITNESS = args.log_scale_fitness if args.log_scale_fitness is not None else config.get_log_scale_fitness()
 
 def run():
     """Temporary function to run all of Plot Evolution Live."""
@@ -43,7 +52,7 @@ def run():
         lines = graph_data.split('\n')
         xs = []
         ys = []
-        
+
         is_transparent = False
         for line in lines:
             if len(line) > 1:
@@ -69,7 +78,10 @@ def run():
             # Add a line for desired frequency
             if config.is_pulse_count():
                 ax1.hlines(y=config.get_desired_frequency(), xmin=1, xmax=config.get_population_size(), color="red", linestyles="dotted")
-            ax1.set_ylim([0, None])
+            if LOG_SCALE_PULSES:
+                ax1.set_yscale('symlog')
+            else:
+                ax1.set_ylim([0, None])
         else:
             title = 'Circuit Fitness this Generation'
             ylabel = 'Fitness'
@@ -98,7 +110,6 @@ def run():
                 ts.append(float(t))
                 ds.append(float(d))
         ax2.clear()
-        # ax2.set_yscale('symlog')
         if config.using_transfer_interval():
             for i in range(0,len(lines),config.get_transfer_interval()):
                 ax2.axvline(x=i, color=accent_color, linestyle="dashed")
@@ -124,8 +135,11 @@ def run():
             ax3.set_ylabel('Diversity', color='#5a70ed')
             ax3.set_ylim(bottom=0)
             ax3.yaxis.set_label_position("right")
-        
+
         ax2.set(xlabel='Generation', ylabel='Fitness', title='Circuit Fitness per Generation')
+        if LOG_SCALE_FITNESS and ys and any(v > 0 for v in ys):
+            ax2.set_yscale('log')
+            ax2.hlines(y=1.0, xmin=min(xs), xmax=max(xs), color="violet", linestyles="dashed", linewidth=0.75)
 
         if formal:
             ax2.legend(plots, labels, bbox_to_anchor=(1.15, 0.5), loc="center left", borderaxespad=0)
@@ -144,7 +158,9 @@ def run():
         for line in lines:
             if len(line) > 1:
                 t, d = line.split(':')
-                d = list(map(lambda x: int(x), d.split(',')))
+                # parse as array of arrays; each circuit has [dev1, dev2, ...] pulse counts
+                arrays = json.loads('[' + d + ']')
+                d = [int(arr[0]) for arr in arrays]
                 xs.append(d[0])
                 ys.append(np.average(d))
                 zs.append(min(d))
@@ -164,6 +180,8 @@ def run():
             ax9.hlines(y=config.get_desired_frequency(), xmin=1, xmax=len(lines), color="violet", linestyles="dotted")
             # labels.append("Desired Frequency")
         ax9.set(xlabel='Generation', ylabel='Pulses', title='Circuit Pulse Count per Generation')
+        if LOG_SCALE_PULSES:
+            ax9.set_yscale('symlog')
 
         if config.using_transfer_interval():
             for i in range(0,len(lines),config.get_transfer_interval()):
@@ -176,36 +194,43 @@ def run():
             fig4.savefig(plots_dir.joinpath("2_pulses.png"), bbox_inches="tight")
 
 
-    def animate_waveform(i):    
+    def animate_waveform(i):
         graph_data = open('workspace/waveformlivedata.log','r').read()
         lines = graph_data.split('\n')
-        pulse_trigger = [341*3.3/715]*500
+        # 12-bit ADC on pico2-ice RP2350 (0-4095 maps to 0-3.3V)
+        ADC_MAX = 4095
         xs = []
         ys = []
         for line in lines:
             if len(line) > 1:
                 x, y = line.split(',')
                 xs.append(int(x))
-                ys.append(float(y) * 3.3/715)
+                ys.append(float(y) * 3.3 / ADC_MAX)
         ax4.clear()
         if config.get_fitness_func() == "TONE_DISCRIMINATOR":
             ax4.set_xlim([0, 1000])
         else:
             ax4.set_xlim([0, 500])
-        #ax4.set_ylim([0, 750])
-        ax4.set_ylim([-0.2, 3.5])
-        ax4.plot(pulse_trigger, "r--")
+        if not config.get_autoscale_waveform():
+            ax4.set_ylim([-0.2, 3.5])
+        # pulse trigger line only relevant for pulse-based fitness functions
+        if config.is_pulse_func():
+            pulse_trigger = [341 * 3.3 / ADC_MAX] * 500
+            ax4.plot(pulse_trigger, "r--")
         ax4.plot(xs, ys, color="blue")
 
         if formal:
-            ax4.legend(['Trigger Voltage', 'Circuit Voltage'], bbox_to_anchor=(1.15, 0.5), loc="lower center", borderaxespad=0)
+            if config.is_pulse_func():
+                ax4.legend(['Trigger Voltage', 'Circuit Voltage'], bbox_to_anchor=(1.15, 0.5), loc="lower center", borderaxespad=0)
+            else:
+                ax4.legend(['Circuit Voltage'], bbox_to_anchor=(1.15, 0.5), loc="lower center", borderaxespad=0)
 
         ax4.set(xlabel='Time (μs)', ylabel='Voltage (V)', title='Current Hardware Waveform')
 
-    def animate_state(i):    
+    def animate_state(i):
         graph_data = open('workspace/statelivedata.log','r').read()
         lines = graph_data.split('\n')
-        pulse_trigger = [341*3.3/715]*500
+        ADC_MAX = 4095
         xs = []
         ys = []
         for line in lines:
@@ -215,13 +240,17 @@ def run():
                 ys.append(float(y))
         ax5.clear()
         ax5.set_xlim([0, 1000])
-        #ax4.set_ylim([0, 750])
         ax5.set_ylim([-0.1, 1.1])
-        ax5.plot(pulse_trigger, "r--")
+        if config.is_pulse_func():
+            pulse_trigger = [341 * 3.3 / ADC_MAX] * 500
+            ax5.plot(pulse_trigger, "r--")
         ax5.plot(xs, ys, color="blue")
 
         if formal:
-            ax5.legend(['Trigger Voltage', 'Circuit Voltage'], bbox_to_anchor=(1.15, 0.5), loc="lower center", borderaxespad=0)
+            if config.is_pulse_func():
+                ax5.legend(['Trigger Voltage', 'Circuit Voltage'], bbox_to_anchor=(1.15, 0.5), loc="lower center", borderaxespad=0)
+            else:
+                ax5.legend(['Circuit Voltage'], bbox_to_anchor=(1.15, 0.5), loc="lower center", borderaxespad=0)
 
         ax5.set(xlabel='Time (μs)', ylabel='Voltage (V)', title='Current State')
 
@@ -271,7 +300,7 @@ def run():
         ys = []
         ylabels = []
         ylabel_i = 1
-        
+
         x = 1
         for line in lines:
             if len(line) > 1:
@@ -293,7 +322,7 @@ def run():
                 ylabel_i = ylabel_i + 1
                 for i in range(len(parsed)):
                     ys[i].append(parsed[i])
-        
+
         if len(ys) > 0:
             ax6.clear()
             ax6.stackplot(xs, ys, labels=ylabels)
@@ -367,8 +396,9 @@ def run():
                 vals = line.split(':')
                 gen = int(vals[0])
                 gens.append(gen)
-                pts = vals[1].split(',')
-                collections.append(list(map(lambda x: float(x), pts)))
+                # parse as array of arrays; each circuit has [dev1, dev2, ...] pulse counts
+                arrays = json.loads('[' + vals[1] + ']')
+                collections.append([float(arr[0]) for arr in arrays])
 
         for i in range(0, len(collections)):
             widths.append(interval * 0.5)
@@ -380,18 +410,21 @@ def run():
                 for i in range(0,len(lines),config.get_transfer_interval()):
                     ax10.axvline(x=i, color=accent_color, linestyle="dashed")
             if config.is_pulse_count():
-                ax10.hlines(y=config.get_desired_frequency(), xmin=1, xmax=len(lines), color="violet", linestyles="dotted")  
+                ax10.hlines(y=config.get_desired_frequency(), xmin=1, xmax=len(lines), color="violet", linestyles="dotted")
             ax10.set(xlabel='Generation', ylabel='Pulses', title='Pulse Violin Plots')
             ax10.set(xlabel='Generation', ylabel='Pulses')
+            if LOG_SCALE_PULSES:
+                ax10.set_yscale('symlog')
 
+    bar = None
     def anim_heatmap(i):
         global max_pulses
+        nonlocal bar
         if config.is_pulse_func():
             data = open('workspace/pulselivedata.log','r').read()
         else:
             data = open('workspace/heatmaplivedata.log','r').read()
 
-        
         lines = data.split('\n')
         collections = []
         gens = []
@@ -399,20 +432,35 @@ def run():
         for line in lines:
             if len(line) > 1:
                 vals = line.split(':')
-                pts = vals[1].split(',')
-                for pt in pts:
-                    gens.append(int(vals[0]))
-                    if config.is_pulse_func():
-                        collections.append(float(pt))
-                    else:
+                if config.is_pulse_func():
+                    # parse as array of arrays; each circuit has [dev1, dev2, ...] pulse counts
+                    arrays = json.loads('[' + vals[1] + ']')
+                    for arr in arrays:
+                        gens.append(int(vals[0]))
+                        collections.append(arr[0])
+                else:
+                    pts = vals[1].split(',')
+                    for pt in pts:
+                        gens.append(int(vals[0]))
                         collections.append(float(pt)*3.3/715)
-                
-        ax8.clear()                         
-        hist = ax8.hist2d(gens,collections,bins=HEATMAP_BINS,cmap=heatmap_color)
+
+        ax8.clear()
+        num_gens = max(gens) - min(gens) + 1 if gens else HEATMAP_BINS
+        if LOG_SCALE_PULSES and config.is_pulse_func() and len(collections) > 0:
+            # use log-spaced bins so detail is visible across orders of magnitude
+            max_val = max(max(collections), 1)
+            y_bins = np.concatenate(([0], np.logspace(0, np.log10(max_val), HEATMAP_BINS)))
+            hist = ax8.hist2d(gens, collections, bins=[num_gens, y_bins], cmap=heatmap_color)
+            ax8.set_yscale('symlog')
+        else:
+            hist = ax8.hist2d(gens,collections,bins=[num_gens, HEATMAP_BINS],cmap=heatmap_color)
 
         if config.is_pulse_func():
+            if not bar:
+                bar = fig3.colorbar(hist[3])
+
             ax8.set(xlabel='Generation', ylabel='Pulses', title='Pulse Count Histogram')
-            fig3.colorbar(hist[3])
+            bar.update_normal(hist[3])
         else:
             ax8.set(xlabel='Generation', ylabel='Voltage (V)', title='Voltage Heatmap')
 
@@ -461,7 +509,7 @@ def run():
 
     formal = True
     if len(sys.argv) > 1 and sys.argv[1] == 'formal':
-        formal = True 
+        formal = True
         plots_dir = plots_dir.joinpath("Formal")
         accent_color = "black"
         accent_color2 = "#65187A"
@@ -476,7 +524,7 @@ def run():
         yellow = "yellow"
         plot = lambda fig, function : animation.FuncAnimation(fig, function, interval=FRAME_INTERVAL, cache_frame_data=False)
 
-    
+
     if not exists(plots_dir):
         mkdir(plots_dir)
 
@@ -485,11 +533,11 @@ def run():
     cols = 1
     has_wf_plot = False
     has_st_plot = False
-    if (config.get_simulation_mode() == 'FULLY_INTRINSIC' and not config.is_pulse_func()) or config.get_simulation_mode() == 'FULLY_SIM':
+    if (config.get_simulation_mode() in ['FULLY_INTRINSIC', 'REMOTE'] and not config.is_pulse_func()) or config.get_simulation_mode() == 'FULLY_SIM':
         rows = rows + 1
         has_wf_plot = True
 
-    if (config.get_simulation_mode() == 'FULLY_INTRINSIC' and config.get_fitness_func() == "TONE_DISCRIMINATOR"):
+    if (config.get_simulation_mode() in ['FULLY_INTRINSIC', 'REMOTE'] and config.get_fitness_func() == "TONE_DISCRIMINATOR"):
         rows = rows + 1
         has_st_plot = True
 
@@ -507,7 +555,7 @@ def run():
     if has_wf_plot:
         ax4 = fig.add_subplot(rows, cols, 3)
         ani3 = plot(fig, animate_waveform)
-    
+
     if has_st_plot:
         ax5 = fig.add_subplot(rows, cols, 4)
         ani4 = plot(fig, animate_state)
@@ -520,7 +568,7 @@ def run():
     ax7 = fig2.add_subplot(1, 1, 1)
     ani7 = plot(fig2, anim_violin_plots)
 
-    if config.get_simulation_mode() == 'FULLY_INTRINSIC':
+    if config.get_simulation_mode() in ['FULLY_INTRINSIC', 'REMOTE']:
         fig3 = plt.figure()
         ax8 = fig3.add_subplot(1,1,1)
         ani8 = plot(fig3, anim_heatmap)
@@ -542,8 +590,34 @@ def run():
 
     plt.subplots_adjust(hspace=0.50)
     fig.tight_layout(pad=5.0)
+
+    # tile all open figures in an even grid filling the screen
+    try:
+        all_figs = [plt.figure(n) for n in plt.get_fignums()]
+        n = len(all_figs)
+        if n > 0:
+            root = all_figs[0].canvas.manager.window.winfo_toplevel()
+            screen_w = root.winfo_screenwidth()
+            screen_h = root.winfo_screenheight()
+            # choose grid: pick cols so rows x cols >= n with minimal empty cells
+            cols = math.ceil(math.sqrt(n))
+            rows = math.ceil(n / cols)
+            cell_w = screen_w // cols
+            cell_h = screen_h // rows
+            for i, f in enumerate(all_figs):
+                row = i // cols
+                col = i % cols
+                f.canvas.manager.window.wm_geometry(f'{cell_w}x{cell_h}+{col * cell_w}+{row * cell_h}')
+    except Exception:
+        pass  # non-TkAgg backends or other issues — fall back to default placement
+
+    def _shutdown(sig, frame):
+        plt.close('all')
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _shutdown)
+
     plt.show(block=(not formal))
-    #plt.show(block=True)
 
 # only run if this is the main method.
 if (__name__ == "__main__"):

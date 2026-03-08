@@ -19,7 +19,6 @@ class Circuit(ABC):
         self._config = config
         self._index = index
         self._fitness = 0
-        
         self._data = []
 
     @abstractmethod
@@ -44,7 +43,7 @@ class Circuit(ABC):
 
     def get_extra_data(self, key):
         return 0
-    
+
     def set_file_attribute(self, attribute, value):
         pass # No default behavior
 
@@ -120,10 +119,6 @@ class Circuit(ABC):
     def get_fitness(self):
         return self._fitness
 
-    @abstractmethod
-    def get_file_attribute(self, name: str):
-        pass
-
     def _get_all_live_reported_value(self) -> list[float]:
         return [self._fitness]
 
@@ -144,7 +139,7 @@ class Circuit(ABC):
 
         # Shows pulse count in this chart if in PULSE_COUNT fitness func, and fitness otherwise
         # Value is always an array separated by semicolons. If values in __data, then use those. Otherwise, use scalar pulses or fitness
-        value = [str(x) for x in self._get_all_live_reported_value()] 
+        value = [str(x) for x in self._get_all_live_reported_value()]
         # if len(self._data) > 0:
         #     # Flatten data
         #     value = [str(item) for sublist in self._data for item in sublist]
@@ -156,7 +151,7 @@ class Circuit(ABC):
         print("alllive")
 
         lines[index] = "{},{},{}\n".format(
-            self._index, 
+            self._index,
             ';'.join(value),
             self.get_file_attribute('src_population')
         )
@@ -170,7 +165,7 @@ class Circuit(ABC):
         """
         Measure the fitness of this circuit using the variance-maximization fitness
         function
-        
+
         Parameters
         ----------
         waveform : list[int]

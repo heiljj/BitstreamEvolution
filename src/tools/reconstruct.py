@@ -6,7 +6,7 @@ This is a test piece of code that is currently not used, and was an exploratory 
 program goal
 ============
 This program is for reconstructing a generation, from another file
-This will build all of the circuit files from a generation file, and put them in 
+This will build all of the circuit files from a generation file, and put them in
 the ASC directory
 
 Args: generation number to reconstruct
@@ -19,7 +19,6 @@ import os
 from Circuit.CircuitLegacy import CircuitLegacy
 from utilities import wipe_folder
 from Config import Config
-from CircuitPopulation import SEED_HARDWARE_FILEPATH
 
 program_name = "reconstruct"
 program_description = "This program reconstructs a generation using the config's ASC directory and generations directory"
@@ -68,9 +67,9 @@ def run():
     # Now, we can reconstruct each circuit
     for i in range(len(bitstreams)):
         # Some of these can be None since we aren't doing actual evolution with this circuit
-        circuit = CircuitLegacy(i + 1, 
-            "hardware" + str(i), 
-            SEED_HARDWARE_FILEPATH,
+        circuit = CircuitLegacy(i + 1,
+            "hardware" + str(i),
+            config.get_seed_fpath(),
             None,
             None,
             config,
@@ -82,7 +81,7 @@ def run():
     # Now tell user that we're done
     print("Generation has been reconstructed")
 
-    
+
 #only runs if it is imported directly
 if (__name__ == "__main__"):
     run()

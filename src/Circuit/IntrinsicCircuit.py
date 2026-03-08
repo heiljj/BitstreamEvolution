@@ -1,11 +1,12 @@
 from pathlib import Path
-from Circuit.FileBasedCircuit import FileBasedCircuit
-from Circuit.FitnessFunction import FitnessFunction
 from time import sleep
 from subprocess import run
 import Config
 import Microcontroller
-import Logger
+
+from Logger import EvolutionLogger
+from Circuit.FileBasedCircuit import FileBasedCircuit
+from Circuit.FitnessFunction import FitnessFunction
 
 RUN_CMD = "iceprog"
 COMPILE_CMD = "icepack"
@@ -15,7 +16,7 @@ class IntrinsicCircuit(FileBasedCircuit):
     No longer an abstract class. Represents circuits that get uploaded to the physical FPGA
     The fitness strategy provided is used to evaluate the circuits
     """
-    def __init__(self, index: int, filename: str, config: Config, template: Path, rand, logger: Logger, microcontroller: Microcontroller, fitness_func: FitnessFunction):
+    def __init__(self, index: int, filename: str, config: Config, template: Path, rand, logger: EvolutionLogger, microcontroller: Microcontroller, fitness_func: FitnessFunction):
         FileBasedCircuit.__init__(self, index, filename, config, template, rand, logger)
         self._fitness_func = fitness_func
         self._extra_data = dict()

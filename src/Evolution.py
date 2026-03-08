@@ -1,8 +1,10 @@
+import sys
+import logging
 from Microcontroller import Microcontroller
 from CircuitPopulation import CircuitPopulation
 from ConfigBuilder import ConfigBuilder
 from Config import Config
-from Logger import Logger
+from Logger import EvolutionLogger
 from subprocess import CalledProcessError, run
 import os
 
@@ -19,7 +21,9 @@ class Evolution:
             base_config_path:str,
             built_config_path:str,
             output_directory:str=None,
-            print_action_only:bool=False) -> None:
+            print_action_only:bool=False,
+            clear_workers:bool=False,
+            speedtest:bool=False) -> None:
 
         if (print_action_only):
             print('Running evolve.py in print only mode:')
@@ -31,14 +35,14 @@ class Evolution:
 
             print('Execution of evolve.py Finished.')
             return
-    
+
         if not os.path.exists("./workspace"):
             os.mkdir("./workspace")
 
         ## Creating the config that will be used.
         config_builder = ConfigBuilder(primary_config_path, override_base_config=base_config_path)
         config_builder.build_config(built_config_path)
-        
+
         ## Use config generated to run experiment
         config = Config(built_config_path)
 
@@ -53,13 +57,16 @@ class Evolution:
             usb_port = config.get_usb_path()
             u = run(["./arduino-cli", "upload", "-b", "arduino:avr:nano", "-p", usb_port, "data/ReadSignal/ReadSignal.ino"])
         ## Run Evolution
-        logger = Logger(config, experiment_description)
+        logger = logging.getLogger(__name__)
+        logger .setLevel(logging.DEBUG)
+        logger .addHandler(logging.StreamHandler(sys.stdout))
+        logger = EvolutionLogger(logger, config, experiment_description)
         # logger.log_info(1, args) - Not sure how to log arguments. This was my attempt to do so.
         config.add_logger(logger)
         config.validate_all()
         self.validate_arguments(output_directory)
         mcu = Microcontroller(config, logger)
-        population = CircuitPopulation(mcu, config, logger)
+        population = CircuitPopulation(mcu, config, logger, clear_workers=clear_workers, speedtest=speedtest)
 
         self.output_directory = output_directory
         self.config = config
@@ -72,17 +79,17 @@ class Evolution:
             population.run_fitness_sensitity()
 
 
-        logger.log_event(0, "Evolution has completed successfully")
+        logger.event(0, "Evolution has completed successfully")
 
-        logger.log_event(1, "Launching the Live Plot window...")
+        logger.event(1, "Launching the Live Plot window...")
         args = ["python3", "src/PlotEvolutionLive.py", "formal"]
         try:
             run(args, check=True, capture_output=True)
         except OSError as e:
-            self.logger.log_error(1, "An error occured while launching PlotEvolutionLive.py")
+            self.logger.error(1, "An error occured while launching PlotEvolutionLive.py")
         except CalledProcessError as e:
-            self.logger.log_error(1, "An error occured in PlotEvolutionLive.py")
-            self.logger.log_error(1, e)
+            self.logger.error(1, "An error occured in PlotEvolutionLive.py")
+            self.logger.error(1, e)
 
         # SECTION Clean up resources
 
@@ -94,7 +101,7 @@ class Evolution:
                 "i:0x0403:0x6010:0",
                 "data/hardware_blink.bin"
             ])
-        
+
         self.clean_up()
 
     def clean_up(self):
@@ -108,7 +115,7 @@ class Evolution:
         self.__WorkspaceFormatter = WorkspaceFormatter(self.config, self.experiment_description)
         self.__WorkspaceFormatter.format_workspace()
 
-    ## Don't know if this is needed, but it might be useful to validate all inputs 
+    ## Don't know if this is needed, but it might be useful to validate all inputs
     ## especially if this is going to take a while to run.
     ## It would also be nice if we could have script that could look over a bunch of configs and validate
     ## that they have all necessary parameters

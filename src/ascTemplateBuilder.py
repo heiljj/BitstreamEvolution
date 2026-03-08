@@ -8,7 +8,7 @@ class ascTemplateBuilder:
         self.__logger = logger
 
     def configure_seed_io(self, seed_hardware, dest):
-        self.__log_event(2, "Configuring the io tiles of the seed circuit")
+        self.__logger.event(2, "Configuring the io tiles of the seed circuit")
         verilog_file = "workspace/template/template.v"
         pcf_file = "workspace/template/template.pcf"
         inputs = self.__config.get_input_pins()
@@ -18,15 +18,15 @@ class ascTemplateBuilder:
 
         blif_file = "workspace/template/template.blif"
         asc_file = "workspace/template/template.asc"
-        self.__log_event(4, "Generating blif file for configurable io")
+        self.__logger.event(4, "Generating blif file for configurable io")
         os.system("yosys -p 'synth_ice40 -dsp -top template -blif " + blif_file +"' "+  verilog_file)
-        self.__log_event(4, "Generated blif file for configurable io")
-        self.__log_event(4, "Generating asc file for configurable io")
+        self.__logger.event(4, "Generated blif file for configurable io")
+        self.__logger.event(4, "Generating asc file for configurable io")
         os.system("arachne-pnr -d up5k -o " + asc_file + " -p " + pcf_file + " " + blif_file)
-        self.__log_event(4, "Generated asc file for configurable io")
+        self.__logger.event(4, "Generated asc file for configurable io")
 
         self.overwritewrite_io(asc_file, seed_hardware, dest)
-        self.__log_event(2, "Finished configuring the io tiles of the seed circuit")
+        self.__logger.event(2, "Finished configuring the io tiles of the seed circuit")
 
     def generate_verilog(self, file, inputs, outputs):
         '''
@@ -50,13 +50,13 @@ class ascTemplateBuilder:
         #             module += "p" + str(p) + " | "
         #         module = module[0:len(module)-3]
         #         module += ";\n"
-        
+
         # end module
         module += "endmodule"
         f = open(file, "w")
         f.write(module)
         f.close()
-        self.__log_event(4, "Generated verilog file for configurable io")
+        self.__logger.event(4, "Generated verilog file for configurable io")
 
     def generate_pcf(self, file, inputs, outputs):
         '''
@@ -72,7 +72,7 @@ class ascTemplateBuilder:
         f = open(file, "w")
         f.write(pcf)
         f.close()
-        self.__log_event(4, "Generated pcf file for configurable io")
+        self.__logger.event(4, "Generated pcf file for configurable io")
 
 
     def overwritewrite_io(self, io_src, logic_src, dest):
@@ -88,7 +88,7 @@ class ascTemplateBuilder:
         dest = open(dest, "r+")
         dest_file = mmap(dest.fileno(),0)
         dest.close()
-        
+
         #find first io tile
         src_tile = io_src_file.find(b".io_tile")
         dest_tile = dest_file.find(b".io_tile")
@@ -108,10 +108,3 @@ class ascTemplateBuilder:
             # find next io tile (will be -1 when we're out of tiles)
             src_tile = io_src_file.find(b".io_tile", src_tile + 1)
             dest_tile = dest_file.find(b".io_tile", dest_tile + 1)
-
-    def __log_event(self, level, *event):
-        """
-		Emit an event-level log. This function is fulfilled through
-		the logger.
-		"""
-        self.__logger.log_event(level, *event)

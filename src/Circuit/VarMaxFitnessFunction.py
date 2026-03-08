@@ -38,20 +38,20 @@ class VarMaxFitnessFunction(FitnessFunction):
                 x = int(data[i].strip().split(b": ", 1)[1])
                 waveform.append(x)
             except:
-                # self.__log_error(1, "FAILED TO READ {} AT LINE {} -> ZEROIZING LINE".format(
+                # self.__logger.error("FAILED TO READ {} AT LINE {} -> ZEROIZING LINE".format(
                 #     self,
                 #     i
                 # ))
                 waveform.append(0)
 
-        # self.__log_event(5, "Waveform: ", waveform) 
+        # self.__logger.event(5, "Waveform: ", waveform)
         return waveform
 
     def __measure_variance_fitness(self, waveform):
         """
         Measure the fitness of this circuit using the variance-maximization fitness
         function
-        
+
         Parameters
         ----------
         waveform : list[int]

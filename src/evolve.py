@@ -65,6 +65,10 @@ parser.add_argument('-d','--description', type=str,default=default_experiment_de
 print_flags = {'enable':['-p','--print-only','--test','--no-action'],
             'disable':['-np', '--no-print-only','--normal','--act']}
 add_bool_argument(parser,"print_only",flag_names=print_flags,default=False)
+parser.add_argument('-cw','--clear-workers', action='store_true', default=False,
+                    help="Clear stale worker records from iCEFARM database before reserving devices.")
+parser.add_argument('-st','--speedtest', action='store_true', default=False,
+                    help="Record per-generation timing data to workspace/speedtest.csv for performance comparison.")
 # --help is added by default
 
 def run():
@@ -93,7 +97,9 @@ def run():
         output_directory =          __args.output_directory,
         experiment_description =    __args.description,
         built_config_path=          BUILT_CONFIG_PATH,
-        print_action_only=          __args.print_only
+        print_action_only=          __args.print_only,
+        clear_workers=              __args.clear_workers,
+        speedtest=                  __args.speedtest
     )
 
 if __name__ == "__main__":

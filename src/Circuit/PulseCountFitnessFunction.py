@@ -16,6 +16,9 @@ def tolorant_variance(data: list[float], tolerance) -> float:
 def MSE(data: list[float], target: int) -> float:
     return sum((point - target) ** 2 for point in data)
 
+def MCE(data: list[float], target: int) -> float:
+    return sum(abs((point - target) ** 3) for point in data)
+
 
 class PulseCountFitnessFunction(FitnessFunction):
     def __init__(self):
@@ -26,46 +29,18 @@ class PulseCountFitnessFunction(FitnessFunction):
         pulses = self.__count_pulses()
         return pulses
 
-    def mse_over_tolorant_var(self, data: list[float]) -> float:
-        TOLERANCE = 0.03
-
-        target = self._config.get_desired_frequency()
-
-        mse = MSE(data, target)
-        var = tolorant_variance(data, target * TOLERANCE) / target
-        return (1 / mse) / (var + 1)
-
     def calculate_fitness(self, data: list[float]) -> float:
         desired_freq = self._config.get_desired_frequency()
-        # data = list(Decimal(point) for point in data)
-        # Get the pulse that is furthest away from the target, and calculate with that
-        # dist = 0
-        # pulse_count = -1
-        # for pc in data:
-        #     this_dist = abs(pc - self._config.get_desired_frequency())
-        #     if this_dist >= dist:
-        #         dist = this_dist
-        #         pulse_count = pc
+        self._extra_data['pulses'] = data
 
-        # self._extra_data['pulses'] = pulse_count
-        # if not max(data) or all(data[0] == point for point in data):
-        #     multiplier = 1
-        # else:
-        #     u = sum(data) / len(data)
-        #     s2 = sum((point - u) ** 2 for point in data)  / len(data)
-        #     multiplier = 1 / (s2 / max(data))
+        match self._config.get_fitness_calculation().lower():
+            case "mce":
+                error = MCE(data, desired_freq)
+            case "mse":
+                error = MSE(data, desired_freq)
 
-        # might be best to go back to original method but cap effectiveness at % of distance from target
-
-        self._extra_data['pulses'] = data[0]
-        # return reduce(mul, (Decimal(self.__calculate_pulse_fitness(float(point))) for point in data), 1) * multiplier
-
-        # av = sum(data) / len(data)
-        # var = sum((point - av) ** 2 for point in data) / target
-        # multiplier = math.sqrt(var)
-
-        # return multiplier / reduce(mul, ((point - target) ** 2 for point in data), 1)
-        return self.mse_over_tolorant_var(data)
+        multiplier = sum(point != 0 for point in data) / len(data)
+        return multiplier if not error else multiplier / error
 
     def get_waveform(self):
         return []
@@ -102,7 +77,7 @@ class PulseCountFitnessFunction(FitnessFunction):
             fitness = math.exp(-0.5 * math.pow((pulses - desired_freq) / deviation, 2))
         else:
             if pulses == desired_freq:
-                # self.__log_event(1, "Unity achieved: {}".format(self))
+                # self.__logger.event(1, "Unity achieved: {}".format(self))
                 fitness = 1
             elif pulses == 0:
                 fitness = 0

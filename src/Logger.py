@@ -7,6 +7,7 @@ from os import mkdir
 from shutil import copytree
 from shutil import rmtree
 from datetime import datetime
+from logging import LoggerAdapter
 
 # The window dimensions
 LINE_WIDTH = 112
@@ -37,7 +38,7 @@ UNDERLINE = '\033[4m'
 README_FILE_HEADER = "FPGA/MCU [1] \n"
 
 # TODO Utilize Python logging library
-class Logger:
+class EvolutionLogger(LoggerAdapter):
     def __init_analysis(self):
         # Make a directory to store data
         analysis = self.__config.get_analysis_directory()
@@ -70,7 +71,7 @@ class Logger:
 
     def __init_monitor(self):
         # Start the monitor
-        # self.log_event(1, "Creating the monitor file...")
+        # self.event(1, "Creating the monitor file...")
 
         self.log_monitor(1, "{}{}".format(
             "Evolutionary Experiment Monitor".center(LINE_WIDTH),
@@ -106,18 +107,19 @@ class Logger:
         if self.__config.get_launch_plots():
             if (self.__config.get_simulation_mode() == 'INTRINSIC_SENSITIVITY'):
                 args = TERM_CMD + ["python3", "src/PlotSensitivityLive.py"]
-            else: 
+            else:
                 args = TERM_CMD + ["python3", "src/PlotEvolutionLive.py", "--frame-interval", str(self.__config.get_frame_interval())]
-            
+
             try:
                 run(args, check=True, capture_output=True)
             except OSError as e:
-                self.log_error(1, "An error occured while launching PlotEvolutionLive.py")
+                self.error("An error occured while launching PlotEvolutionLive.py")
             except CalledProcessError as e:
-                self.log_error(1, "An error occured in PlotEvolutionLive.py")
-                self.log_error(1, e)
+                self.error("An error occured in PlotEvolutionLive.py")
+                self.error(e)
 
-    def __init__(self, config, explanation):
+    def __init__(self, logger, config, explanation):
+        super().__init__(logger)
         self.__config = config
         self.__config.add_logger(self)
         self.__monitor_file = open(config.get_log_file(), "w")
@@ -157,59 +159,41 @@ class Logger:
         self.__init_monitor()
 
     def log_generation(self, population, epoch_time):
-        self.log_event(2, DOUBLE_HLINE)
-        self.log_event(2, DOUBLE_HLINE)
-        self.log_event(2, DOUBLE_HLINE)
+        self.info(DOUBLE_HLINE)
+        self.info(DOUBLE_HLINE)
+        self.info(DOUBLE_HLINE)
 
         current_best_circuit = population.get_current_best_circuit()
         overall_best_circuit = population.get_overall_best_circuit_info()
 
-        self.log_event(2, "CURRENT BEST: {} : EPOCH {} : FITNESS {}".format(
+        self.info("CURRENT BEST: {} : EPOCH {} : FITNESS {}".format(
             str(overall_best_circuit.name),
             str(population.get_best_epoch()),
             str(overall_best_circuit.fitness)
         ))
 
-        self.log_event(2, "HIGHEST FITNESS OF EPOCH {} IS: {} = {} over {} seconds".format(
+        self.info("HIGHEST FITNESS OF EPOCH {} IS: {} = {} over {} seconds".format(
             str(population.get_current_epoch()),
             str(current_best_circuit),
             str(current_best_circuit.get_fitness()),
             str(epoch_time)
         ))
 
-        self.log_event(2, DOUBLE_HLINE)
-        self.log_event(2, DOUBLE_HLINE)
-        self.log_event(2, DOUBLE_HLINE)
+        self.info(DOUBLE_HLINE)
+        self.info(DOUBLE_HLINE)
+        self.info(DOUBLE_HLINE)
+
+    def event(self, level, *msg):
+        # TODO not sure what event is being used for,
+        # don't want to remove level so for now
+        # just ignoring
+        msg = map(str, msg)
+        self.info(" ".join(msg))
 
     def log_monitor(self, prefix,  *msg):
         if self.__config.get_save_log():
             now = datetime.now()
             print(now, prefix, *msg, file=self.__monitor_file)
-
-    def log_event(self, level, *msg):
-        if self.__config.get_log_level() >= level:
-            print(*msg, file=self.__log_file)
-            self.log_monitor("", *msg)
-
-    def log_info(self, level, *msg):
-        if self.__config.get_log_level() >= level:
-            print("INFO: ", OKBLUE, *msg, ENDC, file=self.__log_file)
-            self.log_monitor("INFO: ", *msg)
-
-    def log_warning(self, level, *msg):
-        if self.__config.get_log_level() >= level:
-            print("WARNING: ", WARNING, *msg, ENDC, file=self.__log_file)
-            self.log_monitor("WARNING: ", *msg)
-
-    def log_error(self, level, *msg):
-        if self.__config.get_log_level() >= level:
-            print("ERROR: ", FAIL, *msg, ENDC, file=self.__log_file)
-            self.log_monitor("ERROR: ", *msg)
-
-    def log_critical(self, level, *msg):
-        if self.__config.get_log_level() >= level:
-            print("CRITICAL: ", FAIL, *msg, ENDC, file=self.__log_file)
-            self.log_monitor("CRITICAL: ", *msg)
 
     def save_workspace(self, directory):
         self.__monitor_file.close()

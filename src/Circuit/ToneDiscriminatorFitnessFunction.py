@@ -17,12 +17,12 @@ class ToneDiscriminatorFitnessFunction(FitnessFunction):
 
     def __read_variance_data_td(self):
         """
-        Reads tone discriminator data from the Circuit data file, 
-        which contains readings from the Microcontroller. Data includes waveform (ADC) AND 
+        Reads tone discriminator data from the Circuit data file,
+        which contains readings from the Microcontroller. Data includes waveform (ADC) AND
         state (input frequency) information.
 
         .. todo::
-            Check the condition of the for loop. Why the -1? 
+            Check the condition of the for loop. Why the -1?
 
         Returns
         -------
@@ -45,7 +45,7 @@ class ToneDiscriminatorFitnessFunction(FitnessFunction):
             try:
                 # If the reading of the data suceeds, split into the waveform and state readings
                 dataPoint = data[i].decode("utf-8")
-                
+
                 x = int(re.split(" ", dataPoint)[1])
                 y = int(re.split(" ", dataPoint)[2])
 
@@ -54,15 +54,15 @@ class ToneDiscriminatorFitnessFunction(FitnessFunction):
                 state.append(y)
             except:
                 # If the reading of the data fails, just record the data as 0s
-                # self.__log_error(1, "TONE_DISC FAILED TO READ {} AT LINE {} -> ZEROIZING LINE".format(
+                # self.__logger.error("TONE_DISC FAILED TO READ {} AT LINE {} -> ZEROIZING LINE".format(
                 #     self,
                 #     i
                 # ))
                 waveform.append(0)
                 state.append(0)
 
-        # self.__log_event(5, "Waveform: ", waveform)
-        # self.__log_event(5, "State: ", state) 
+        # self.__logger.event(5, "Waveform: ", waveform)
+        # self.__logger.event(5, "State: ", state)
 
         # Return the populated arrays
         return (waveform, state)
@@ -77,8 +77,8 @@ class ToneDiscriminatorFitnessFunction(FitnessFunction):
     def __measure_tonedisc_fitness(self, waveform, state):
         """
         Measure the fitness of this circuit using the tone discriminator fitness
-        function. 
-        
+        function.
+
         Parameters
         ----------
         waveform : list[int]
@@ -95,7 +95,7 @@ class ToneDiscriminatorFitnessFunction(FitnessFunction):
         # Note: operating voltage of the Arduino Nano is 5 V, while that of the FPGA is 3.3 V
         # According to the ice40up5k datasheet, 3.6 V is the absolute maximum output voltage of FPGA
         # Thus, each ADC reading can range from 0 (0 V) to 737 (3.6 V = 5 V * (737 / 1024))
-        
+
         # There are 2 acceptable cases to produce a perfect fitness of 1:
             # (1): The circuit outputs 0 V for low frequencies (State = 0) and 3.6 V for high frequencies (State = 1)
             # (2): The circuit outputs 0 V for high frequencies (State = 1) and 3.6 V for low frequencies (State = 0)
@@ -149,7 +149,7 @@ class ToneDiscriminatorFitnessFunction(FitnessFunction):
                     waveform_diffs[0] += (737 - waveformPoint)
                     waveform_diffs[1] += waveformPoint
                     waveform_sums[1] += waveformPoint
-        
+
         # Write waveform data to file
         with open("workspace/waveformlivedata.log", "w+") as waveLive:
             i = 1
@@ -176,12 +176,12 @@ class ToneDiscriminatorFitnessFunction(FitnessFunction):
             stateZeroAve = (waveform_sums[0] / stateZeroCount)
             stateOneAve = (waveform_sums[1] / stateOneCount)
             fitness = (abs(stateZeroAve - stateOneAve) / 737.0)
-            # self.__log_event(1,
+            # self.__logger.event(1,
             # "State 0 Average = ",
             # stateZeroAve, " --- State 0 Count = ", stateZeroCount,
             #   " ----- State 1 Average = ", stateOneAve,
             #   " State 1 Count = ", stateOneCount)
-        
+
         # Compute mean voltage
         mean_voltage = sum(waveform) / len(waveform) #used by combined fitness func
 

@@ -3,11 +3,16 @@ from pathlib import Path
 from shutil import copyfile
 from subprocess import run
 import os
-from Circuit.Circuit import Circuit
-import Config
-import Logger
+from typing import TYPE_CHECKING, Tuple
 
 from ascutil import mutate
+
+from Circuit.Circuit import Circuit
+from Config import Config
+from Logger import EvolutionLogger
+
+if TYPE_CHECKING:
+    import numpy as np
 
 COMPILE_CMD = "icepack"
 
@@ -19,7 +24,7 @@ class FileBasedCircuit(Circuit):
     Provides useful methods for working with hardware files
     """
 
-    def __init__(self, index: int, filename: str, config: Config, template: Path, rand, logger: Logger):
+    def __init__(self, index: int, filename: str, config: Config, template: Path, rand, logger: EvolutionLogger):
         Circuit.__init__(self, index, filename, config)
 
         self._rand = rand
@@ -53,19 +58,19 @@ class FileBasedCircuit(Circuit):
     def copy_from(self, other):
         copyfile(other._hardware_filepath, self._hardware_filepath)
 
-    def mutate(self):
-        # def mutate_bit(bit, row, col, *rest):
-        #     if self._config.get_mutation_probability() >= self._rand.uniform(0,1):
-        #         # Set this bit to either a 0 or 1 randomly
-        #         # Keep in mind that these are BYTES that we are modifying, not characters
-        #         # Therefore, we have to set it to either ASCII 0 (48) or ASCII 1 (49), not actual 0 or 1, which represent different characters
-        #         # and will corrupt the file if we mutate in this way
-        #         # 48 = 0, 49 = 1. To flip, just need to do (48+49) - the current value (48+49=97)
-        #         # This now always flips the bit instead of randomly assigning it every time
-        #         # Note: If prev != 48 or 49, then we changed the wrong value because it was not a 0 or 1 previously
-        #         # self._log_event(4, "Mutating:", self, "@(", row, ",", col, ") previous was", bit)
-        #         return 97 - bit
-        # self._run_at_each_modifiable(mutate_bit)
+    def mutate(self, chance=None):
+        if chance is None:
+            chance = self._config.get_mutation_probability()
+
+        # ascutil uses 0 based indexing
+        rows = [row-1 for row in self._config.get_routing_rows()]
+        columns = [int(column)-1 for column in self._config.get_accessed_columns()]
+        mutate(self._hardware_filepath, rows, columns, chance)
+
+    def randomize_bitstream(self):
+        # def randomize_bit(*rest):
+        #     return self._rand.integers(48, 50)
+        # self._run_at_each_modifiable(randomize_bit)
         routing_type = self._config.get_routing_type()
         if routing_type == "MOORE":
             rows = [1, 2, 13]
@@ -76,13 +81,7 @@ class FileBasedCircuit(Circuit):
 
         rows = [row-1 for row in rows]
         columns = [int(column)-1 for column in self._config.get_accessed_columns()]
-        mutation_chance = self._config.get_mutation_probability()
-        mutate(self._hardware_filepath, rows, columns, mutation_chance)
-
-    def randomize_bitstream(self):
-        def randomize_bit(*rest):
-            return self._rand.integers(48, 50)
-        self._run_at_each_modifiable(randomize_bit)
+        mutate(self._hardware_filepath, rows, columns, 0.5)
 
     def crossover(self, parent, crossover_point: int):
         """
@@ -112,6 +111,48 @@ class FileBasedCircuit(Circuit):
                 line_end = parent_hw_file.find(b"\n", line_start + 1)
                 line_size = line_end - line_start + 1
 
+                my_pos = my_tile + line_size * (crossover_point - 1)
+                parent_pos = parent_tile + line_size * (crossover_point - 1)
+
+                data = parent_hw_file[parent_pos:parent_pos + line_size]
+                self.update_hardware_file(my_pos, line_size, data)
+
+            parent_tile = parent_hw_file.find(b".logic_tile", parent_tile + 1)
+            my_tile = self._hardware_file.find(b".logic_tile", my_tile + 1)
+
+        # Need to set our source population to our parent's
+        src_pop = parent.get_file_attribute("src_population")
+        if src_pop != None:
+            self.set_file_attribute("src_population", src_pop)
+
+    def crossover_each(self, parent, crossover_bounds: Tuple[int, int], rand: "np.random.Generator"):
+        """
+        Copy part of the hardware file from parent into this circuit's hardware file.
+        Uses a different crossover point from the range on each tile.
+
+        Parameters
+        ----------
+        parent : Circuit
+            The circuit file this circuit is being crossed with
+        crossover_point : int
+            The index in the editable bitstream this crossover is occouring at
+        """
+        # If crossover point is not an int, then we get a weird error about defining __index__
+        # further down; fix manually to avoid confusion
+
+        parent_hw_file = parent.get_hardware_file()
+        # Need to keep track separately since we can have different-length comments
+        parent_tile = parent_hw_file.find(b".logic_tile")
+        my_tile = self._hardware_file.find(b".logic_tile")
+        while my_tile > 0:
+            my_pos = my_tile + len(".logic_tile")
+            parent_pos = parent_tile + len(".logic_tile")
+            if self.__tile_is_included(self._hardware_file, my_pos):
+                line_start = parent_hw_file.find(b"\n", parent_tile) + 1
+                line_end = parent_hw_file.find(b"\n", line_start + 1)
+                line_size = line_end - line_start + 1
+
+                crossover_point = rand.integers(*crossover_bounds)
                 my_pos = my_tile + line_size * (crossover_point - 1)
                 parent_pos = parent_tile + line_size * (crossover_point - 1)
 
@@ -210,7 +251,7 @@ class FileBasedCircuit(Circuit):
         """
         Compile circuit ASC file to a BIN file for hardware upload.
         """
-        self._log_event(2, "Compiling", self, "with icepack...")
+        self._logger.event(2, "Compiling", self, "with icepack...")
 
         # Ensure the file backing the mmap is up to date with the latest
         # changes to the mmap.
@@ -223,7 +264,7 @@ class FileBasedCircuit(Circuit):
         ]
         run(compile_command)
 
-        self._log_event(2, "Finished compiling", self)
+        self._logger.event(2, "Finished compiling", self)
 
     def __tile_is_included(self, hardware_file, pos):
         """
@@ -429,10 +470,3 @@ class FileBasedCircuit(Circuit):
         # Re-map our hardware file
         self._hardware_file = mmap(hardware_file.fileno(), 0)
         hardware_file.close()
-
-    def _log_event(self, level, *event):
-        """
-        Emit an event-level log. This function is fulfilled through
-        the logger.
-        """
-        self._logger.log_event(level, *event)
