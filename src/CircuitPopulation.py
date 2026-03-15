@@ -5,35 +5,39 @@ Circuit Population
 This class was reviewed, and should be fully documented at a basic level.
 
 """
-import os
-import numpy as np
-from shutil import copyfile
-from sortedcontainers import SortedKeyList
-from numpy.random import default_rng
-from pathlib import Path
-from collections import namedtuple
-from time import time
 import atexit
-import random
 import math
+import os
+import random
+import shutil
+from collections import namedtuple
+from dataclasses import dataclass, field
+from datetime import datetime
 from mmap import mmap
+from pathlib import Path
+from shutil import copyfile
+from time import time
+
+import numpy as np
+from icefarm.client.drivers import PulseCountClient, VarMaxClient, MultiPulseCountClient
+from icefarm.client.lib.pulsecount import PulseCountEvaluation
+from numpy.random import default_rng
+from sortedcontainers import SortedKeyList
+
+from ascTemplateBuilder import ascTemplateBuilder
 from Circuit.FileBasedCircuit import FileBasedCircuit
 from Circuit.FullySimCircuit import FullySimCircuit
 from Circuit.IntrinsicCircuit import IntrinsicCircuit
 from Circuit.PulseCountFitnessFunction import PulseCountFitnessFunction
+from Circuit.RemoteCircuit import EvolutionClient, RemoteCircuit
 from Circuit.SimHardwareCircuit import SimHardwareCircuit
-from Circuit.ToneDiscriminatorFitnessFunction import ToneDiscriminatorFitnessFunction
+from Circuit.ToneDiscriminatorFitnessFunction import \
+    ToneDiscriminatorFitnessFunction
 from Circuit.VarMaxFitnessFunction import VarMaxFitnessFunction
-from Circuit.RemoteCircuit import RemoteCircuit, EvolutionClient
-from ga.selection.utils import selection_fac
-from ga.diversity import diversity_fac
 from Config import Config
-from ascTemplateBuilder import ascTemplateBuilder
+from ga.diversity import diversity_fac
+from ga.selection.utils import selection_fac
 from utilities import wipe_folder
-from datetime import datetime
-import random
-
-from icefarm.client.drivers import PulseCountClient, VarMaxClient
 
 RANDOMIZE_UNTIL_NOT_SET_ERR_MSG = '''\
 RANDOMIZE_UNTIL not set in config.ini, continuing without randomization'''
@@ -58,6 +62,18 @@ CircuitInfo = namedtuple("CircuitInfo", ["name", "fitness"])
 # Named tuple for circuit's path and fitness; currently only used for combining populations
 CircuitPathInfo = namedtuple("CircuitPathInfo", ["path", "fitness"])
 
+from Circuit.DirectRouting.simulation import Config
+X_SIZE = 3
+Y_SIZE = 29
+# top left corner of tile
+LOCATIONS = [(12, 29), (16, 29)]
+node_size = X_SIZE * Y_SIZE
+configs = []
+for i, pos in enumerate(LOCATIONS):
+    configs.append(Config(logic_tiles=[(x, y) for x in range(pos[0], pos[0] + X_SIZE) for y in range(pos[1] - Y_SIZE + 1, pos[1] + 1)]))
+
+pin9conf = configs[0]
+pin21conf = configs[1]
 
 def is_pulse_func(config):
     """
@@ -114,7 +130,7 @@ class CircuitPopulation:
                     logger.info("Waveform data transfer enabled")
                 self._client = VarMaxClient(url, name, logger, send_waveform=config.get_icefarm_send_waveform())
             else:
-                self._client = PulseCountClient(url, name, logger)
+                self._client = MultiPulseCountClient(url, name, logger)
             if clear_workers:
                 logger.info("Clearing stale workers...")
                 self._client.clearWorkers()
@@ -260,7 +276,7 @@ class CircuitPopulation:
                 else:
                     serials = None
 
-                return RemoteCircuit(self._evo_client, serials, index, file_name, self.__config, seed_arg, self.__rand, self.__logger, fit_func)
+                return RemoteCircuit(self._evo_client, serials, index, file_name, self.__config, seed_arg, self.__rand, self.__logger, fit_func, node_size)
 
             return IntrinsicCircuit(index, file_name, self.__config, seed_arg, self.__rand, self.__logger, self.__microcontroller, fit_func)
 
@@ -564,20 +580,65 @@ class CircuitPopulation:
                 circuit.clear_data()
 
             for _ in range(self.__config.get_num_passes()):
-                for circuit in self._circuits:
-                    if isinstance(circuit, FileBasedCircuit):
-                        circuit.upload()
+                # for circuit in self._circuits:
+                #     if isinstance(circuit, FileBasedCircuit):
+                #         circuit.upload()
 
-                    # TODO imo we can remove this now that we're using picos since the
-                    # upload happens essentially instantly compared to the evaluation time
-                    for i in range(self.__config.get_num_samples()):
-                        circuit.collect_data_once()
+                #     # TODO imo we can remove this now that we're using picos since the
+                #     # upload happens essentially instantly compared to the evaluation time
+                #     for i in range(self.__config.get_num_samples()):
+                #         circuit.collect_data_once()
+
+                from Circuit.DirectRouting.simulation import Config, generate_asc_config
+                from Circuit.RemoteCircuit import EvolutionClient
+                import subprocess
+                import itertools
+
+                @dataclass
+                class CircuitPair:
+                    circuit1: RemoteCircuit
+                    circuit2: RemoteCircuit
+
+                seed = self.__config.get_seed_fpath()
+                client = self._evo_client
+                class PairEvaluation:
+                    def __init__(self, pair: CircuitPair):
+                        asc_path = pair.circuit1.get_hardware_file_path()
+                        self.pair = pair
+
+                        shutil.copyfile(seed, asc_path)
+
+                        first_pass = generate_asc_config(pair.circuit1.bitstream, pin9conf, asc_path)
+                        with open(asc_path, "w") as f:
+                            f.write(first_pass)
+
+                        second_pass = generate_asc_config(pair.circuit2.bitstream, pin21conf, asc_path)
+                        with open(asc_path, "w") as f:
+                            f.write(second_pass)
+
+                        subprocess.run(["icepack", asc_path, pair.circuit1._bitstream_filepath])
+
+                        client.evaluate(pair.circuit1._serials, pair.circuit1)
+
+                for ckt in self._circuits:
+                    ckt.clear_data()
+
+                pairs = [CircuitPair(ckt1, ckt2) for ckt1, ckt2 in itertools.batched(self._circuits, 2)]
+                pair_evaluations = [PairEvaluation(pair) for pair in pairs]
+
+                for pair in pairs:
+                    results = client.get_result(pair.circuit1)
+
+                    for evaluations in results.values():
+                        for pin9, pin21 in evaluations:
+                            pair.circuit1._data.append(float(pin9))
+                            pair.circuit2._data.append(float(pin21))
 
             for circuit in self._circuits:
                 circuit.calculate_fitness()
                 self.__logger.info(f"{circuit} pulses: {circuit._data}")
 
-            self.__population_bistream_sum = np.zeros(self.__population_bistream_sum.size)
+            # self.__population_bistream_sum = np.zeros(self.__population_bistream_sum.size)
             for circuit in self._circuits:
                 # If evaluate returns true, then a circuit has surpassed
                 # the threshold and we are done.
@@ -599,8 +660,8 @@ class CircuitPopulation:
                 reevaulated_circuits.add(circuit)
 
                 #add the circuit's bistream to our population sum - for diversity calculation and visualization
-                if self.__config.get_simulation_mode() != 'FULLY_SIM':
-                    self.__population_bistream_sum += circuit.get_bitstream()
+                # if self.__config.get_simulation_mode() != 'FULLY_SIM':
+                #     self.__population_bistream_sum += circuit.get_bitstream()
 
             epoch_time = time() - start
             self._circuits = reevaulated_circuits

@@ -6,9 +6,12 @@ from icefarm.client.lib.pulsecount import PulseCountEvaluation
 from icefarm.client.lib.varmax import VarMaxEvaluation
 from Circuit.FileBasedCircuit import FileBasedCircuit
 from Circuit import FitnessFunction
+import random
+import numpy as np
+from Circuit.DirectRouting.simulation import make_population
 
 class RemoteCircuit(FileBasedCircuit):
-    def __init__(self, client: "EvolutionClient", serials: List[str], index, filename, config, template, rand, logger, fitnessfunc: FitnessFunction):
+    def __init__(self, client: "EvolutionClient", serials: List[str], index, filename, config, template, rand, logger, fitnessfunc: FitnessFunction, direct_node_size):
         super().__init__(index, filename, config, template, rand, logger)
         self._client = client
         self._serials = serials
@@ -16,6 +19,29 @@ class RemoteCircuit(FileBasedCircuit):
         self._extra_data = {}
         self._waveform_samples = None
         self._fitnessfunc.attach(filename, None, config, self._extra_data)
+
+        self.direct_node_size = direct_node_size
+        self.bitstream = make_population(1, self.direct_node_size)[0]
+
+    def randomize_bitstream(self):
+        self.bitstream = make_population(1, self.direct_node_size)[0]
+
+    def mutate(self, chance):
+        for j in range(len(self.bitstream)):
+            # Mutate by flipping random bits
+            if np.random.rand() < chance:
+                bit_to_flip = np.random.randint(0, 32)
+                self.bitstream[j] = self.bitstream[j] ^ (1 << bit_to_flip)
+
+    def crossover(self, parent, point: int):
+        other_bitstream = parent.bitstream
+        point = random.randint(0, len(self.bitstream))
+        self.bitstream = np.append(self.bitstream[:point], other_bitstream[point:])
+
+    def crossover_each(self, parent, crossover_bounds, rand):
+        other_bitstream = parent.bitstream
+        point = random.randint(0, len(self.bitstream))
+        self.bitstream = np.append(self.bitstream[:point], other_bitstream[point:])
 
     def collect_data_once(self):
         # data is appended during fitness calculation
@@ -39,23 +65,19 @@ class RemoteCircuit(FileBasedCircuit):
         self.collect_data_once()
 
     def _calculate_fitness(self):
-        if not self._data:
-            self._data = []
-            results = self._client.get_result(self)
-            waveform = self._client.get_waveform(self)
-            # TODO add an additional log file that maps serials to pulses
-            if self._serials:
-                for serial in self._serials:
-                    self._data.extend(float(point) for point in results[serial])
-            else:
-                for serial in results.keys():
-                    self._data.extend(float(point) for point in results[serial])
+        # if not self._data:
+        #     self._data = []
+        #     results = self._client.get_result(self)
+        #     waveform = self._client.get_waveform(self)
+        #     # TODO add an additional log file that maps serials to pulses
+        #     if self._serials:
+        #         for serial in self._serials:
+        #             self._data.extend(float(point) for point in results[serial])
+        #     else:
+        #         for serial in results.keys():
+        #             self._data.extend(float(point) for point in results[serial])
 
-            self._extra_data["pulses"] = self._data
-
-            if waveform:
-                self._waveform_samples = waveform
-
+        self._extra_data["pulses"] = self._data
         return self._fitnessfunc.calculate_fitness(self._data)
 
     def get_extra_data(self, key):
@@ -126,13 +148,13 @@ class EvolutionClient:
                 if serial not in self._result_map[fpath]:
                     self._result_map[fpath][serial] = []
 
-                if isinstance(result, list) or isinstance(result, tuple):
-                    fitness, samples = result
-                    self._result_map[fpath][serial].append(float(fitness))
-                    if samples:
-                        self._waveform_map[fpath] = samples
-                else:
-                    self._result_map[fpath][serial].append(float(result))
+                # if isinstance(result, list) or isinstance(result, tuple):
+                #     fitness, samples = result
+                #     self._result_map[fpath][serial].append(float(fitness))
+                #     if samples:
+                #         self._waveform_map[fpath] = samples
+                # else:
+                self._result_map[fpath][serial].append(list(map(float, result)))
 
                 self._logger.debug(f"Received value for file {fpath}: {result}")
 

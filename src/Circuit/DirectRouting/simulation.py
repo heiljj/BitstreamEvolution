@@ -16,8 +16,9 @@ import numpy as np
 from dataclasses import dataclass, field
 import random
 # from config_improved import TileDirection, generate_tile
-from config_improved import TileDirection, generate_tile
+from Circuit.DirectRouting.config_improved import TileDirection, generate_tile
 import re
+import icefarm
 
 @dataclass
 class Config:
@@ -164,6 +165,8 @@ def simulate_directory(directory):
             num_str = ''.join(ch for ch in filename if ch.isdigit())
             if num_str:
                 # TODO: Replace with actual simulation/testing
+
+
                 scores[int(num_str)] = np.random.rand()
     return scores
 
